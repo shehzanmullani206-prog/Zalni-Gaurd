@@ -1,9 +1,12 @@
-name: Build Android APK
+name: Build and Release Android APK
 
 on:
   push:
     branches: [ main, master ]
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -34,8 +37,53 @@ jobs:
       - name: Build APK
         run: ./gradlew assembleDebug --no-daemon
 
-      - name: Upload APK
+      - name: Prepare Direct Install APK
+        run: |
+          cp app/build/outputs/apk/debug/app-debug.apk ZalniGuard.apk
+
+      - name: Upload Build Artifact (ZIP Fallback)
         uses: actions/upload-artifact@v4
         with:
-          name: app-debug
-          path: app/build/outputs/apk/debug/app-debug.apk
+          name: ZalniGuard-APK
+          path: ZalniGuard.apk
+
+      - name: Publish Direct-Install GitHub Release
+        uses: softprops/action-gh-release@v2
+        if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/')
+        with:
+          tag_name: latest
+          name: "ZALNI Guard (Latest Direct Install)"
+          body: |
+            ## 📱 Direct Android Installation
+
+            Download the APK directly to your phone to install without unzipping:
+
+            👉 **[Download ZalniGuard.apk (Direct Download)](https://github.com/${{ github.repository }}/releases/download/latest/ZalniGuard.apk)**
+
+            ### Installation Steps:
+            1. Tap the download link above directly on your Android phone.
+            2. When downloaded, tap **Open**.
+            3. If prompted by Android, enable **"Allow from this source"** for your browser.
+            4. Tap **Install** to finish setup.
+
+            ---
+            *Commit: ${{ github.sha }}*
+          files: |
+            ZalniGuard.apk
+            app/build/outputs/apk/debug/app-debug.apk
+          make_latest: true
+
+      - name: Add QR Code & Direct Link to GitHub Action Summary
+        run: |
+          DIRECT_URL="https://github.com/${{ github.repository }}/releases/download/latest/ZalniGuard.apk"
+          QR_URL="https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${DIRECT_URL}"
+          echo "## 📱 Direct Device Installation" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Option 1: Scan with phone camera" >> $GITHUB_STEP_SUMMARY
+          echo "Scan this QR code with your phone to download and install immediately:" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "![Scan to install](${QR_URL})" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Option 2: Direct Phone Download Link" >> $GITHUB_STEP_SUMMARY
+          echo "Open this link on your Android browser:" >> $GITHUB_STEP_SUMMARY
+          echo "🔗 **[Download ZalniGuard.apk](${DIRECT_URL})**" >> $GITHUB_STEP_SUMMARY
