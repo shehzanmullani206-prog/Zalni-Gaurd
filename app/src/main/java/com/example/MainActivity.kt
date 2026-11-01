@@ -15,6 +15,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import com.example.data.BlockListRepository
 import com.example.ui.screens.EnterPasswordScreen
 import com.example.ui.screens.HomeScreen
 import com.example.ui.screens.SetPasswordScreen
@@ -23,6 +24,7 @@ import com.example.ui.theme.ZalniGuardTheme
 class MainActivity : ComponentActivity() {
 
     private lateinit var passwordManager: PasswordManager
+    private lateinit var blockListRepository: BlockListRepository
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -34,6 +36,7 @@ class MainActivity : ComponentActivity() {
         )
 
         passwordManager = PasswordManager(this)
+        blockListRepository = (application as ZalniGuardApplication).blockListRepository
 
         enableEdgeToEdge()
 
@@ -44,6 +47,7 @@ class MainActivity : ComponentActivity() {
                 ) { innerPadding ->
                     ZalniGuardApp(
                         passwordManager = passwordManager,
+                        blockListRepository = blockListRepository,
                         onExitApp = { finish() },
                         modifier = Modifier.padding(innerPadding)
                     )
@@ -62,6 +66,7 @@ private enum class ScreenState {
 @Composable
 fun ZalniGuardApp(
     passwordManager: PasswordManager,
+    blockListRepository: BlockListRepository,
     onExitApp: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -110,12 +115,8 @@ fun ZalniGuardApp(
             }
             HomeScreen(
                 passwordManager = passwordManager,
+                blockListRepository = blockListRepository,
                 onLockApp = {
-                    isUnlocked = false
-                },
-                onResetPassword = {
-                    passwordManager.clearPassword()
-                    hasPassword = false
                     isUnlocked = false
                 },
                 modifier = modifier

@@ -2,6 +2,9 @@ package com.example
 
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
+import com.example.data.BlockListRepository
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -17,12 +20,14 @@ class ExampleRobolectricTest {
 
     private lateinit var context: Context
     private lateinit var passwordManager: PasswordManager
+    private lateinit var blockListRepository: BlockListRepository
 
     @Before
     fun setUp() {
         context = ApplicationProvider.getApplicationContext()
         passwordManager = PasswordManager(context)
         passwordManager.clearPassword()
+        blockListRepository = BlockListRepository(context)
     }
 
     @Test
@@ -64,5 +69,29 @@ class ExampleRobolectricTest {
         assertEquals(5, attempts5)
         assertEquals(30, lockedSec5)
         assertTrue(passwordManager.getRemainingLockoutSeconds() > 0)
+    }
+
+    @Test
+    fun testBlockListRepositoryAddAndRemove() = runBlocking {
+        // Toggle protection
+        blockListRepository.setProtectionEnabled(true)
+        assertTrue(blockListRepository.isProtectionEnabledFlow.first())
+
+        blockListRepository.setProtectionEnabled(false)
+        assertFalse(blockListRepository.isProtectionEnabledFlow.first())
+
+        // Add words
+        blockListRepository.addWord("gambling")
+        blockListRepository.addWord("violence")
+
+        val words = blockListRepository.blockedWordsFlow.first()
+        assertTrue(words.contains("gambling"))
+        assertTrue(words.contains("violence"))
+
+        // Remove word
+        blockListRepository.removeWord("gambling")
+        val updatedWords = blockListRepository.blockedWordsFlow.first()
+        assertFalse(updatedWords.contains("gambling"))
+        assertTrue(updatedWords.contains("violence"))
     }
 }
