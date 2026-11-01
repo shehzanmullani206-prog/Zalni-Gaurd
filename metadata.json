@@ -1,0 +1,6 @@
+{
+  "name": "ZALNI Guard",
+  "description": "Native security lock app with PBKDF2 password gate.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
