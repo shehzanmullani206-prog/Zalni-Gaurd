@@ -1,3 +1,6 @@
 <resources>
     <string name="app_name">ZALNI Guard</string>
+    <string name="accessibility_service_description">Monitors on-screen content to detect and block inappropriate keywords configured by parents.</string>
+    <string name="foreground_service_notification_title">ZALNI Guard</string>
+    <string name="foreground_service_notification_text">ZALNI Guard is active</string>
 </resources>

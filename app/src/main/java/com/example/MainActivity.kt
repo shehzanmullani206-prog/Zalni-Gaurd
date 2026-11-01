@@ -6,6 +6,9 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
@@ -37,6 +40,13 @@ class MainActivity : ComponentActivity() {
 
         passwordManager = PasswordManager(this)
         blockListRepository = (application as ZalniGuardApplication).blockListRepository
+
+        // Start foreground service if protection is already enabled
+        lifecycleScope.launch {
+            if (blockListRepository.isProtectionEnabledFlow.first()) {
+                com.zalni.guard.ServiceController.startService(this@MainActivity)
+            }
+        }
 
         enableEdgeToEdge()
 

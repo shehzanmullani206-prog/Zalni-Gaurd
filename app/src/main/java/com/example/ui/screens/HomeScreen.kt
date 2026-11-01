@@ -177,6 +177,7 @@ fun HomeScreen(
                 showTurnOffDialog = false
                 coroutineScope.launch {
                     blockListRepository.setProtectionEnabled(false)
+                    com.zalni.guard.ServiceController.stopService(context)
                 }
             },
             onDismiss = {
@@ -315,6 +316,7 @@ fun HomeScreen(
                                     // Turning ON does not require password
                                     coroutineScope.launch {
                                         blockListRepository.setProtectionEnabled(true)
+                                        com.zalni.guard.ServiceController.startService(context)
                                     }
                                 } else {
                                     // Turning OFF MUST require password verification
