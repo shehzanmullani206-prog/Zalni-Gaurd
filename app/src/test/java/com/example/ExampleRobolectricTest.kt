@@ -94,4 +94,36 @@ class ExampleRobolectricTest {
         assertFalse(updatedWords.contains("gambling"))
         assertTrue(updatedWords.contains("violence"))
     }
+
+    @Test
+    fun testBlockListRepositoryPauseUntil() = runBlocking {
+        assertEquals(0L, blockListRepository.pauseUntilFlow.first())
+
+        val futureTimestamp = System.currentTimeMillis() + 300_000L
+        blockListRepository.setPauseUntil(futureTimestamp)
+        assertEquals(futureTimestamp, blockListRepository.pauseUntilFlow.first())
+
+        blockListRepository.setPauseUntil(0L)
+        assertEquals(0L, blockListRepository.pauseUntilFlow.first())
+    }
+
+    @Test
+    fun testSettingsGuardConstantsClassification() {
+        assertTrue(com.zalni.guard.SettingsGuardConstants.isSettingsPackage("com.android.settings"))
+        assertTrue(com.zalni.guard.SettingsGuardConstants.isInstallerPackage("com.android.packageinstaller"))
+        assertTrue(com.zalni.guard.SettingsGuardConstants.isInstallerPackage("com.google.android.packageinstaller"))
+        assertFalse(com.zalni.guard.SettingsGuardConstants.isInstallerPackage("com.android.settings"))
+
+        val dangerWords = com.zalni.guard.SettingsGuardConstants.DANGER_KEYWORDS
+        assertTrue(dangerWords.contains("force stop"))
+        assertTrue(dangerWords.contains("uninstall"))
+        assertTrue(dangerWords.contains("clear data"))
+        assertTrue(dangerWords.contains("फ़ोर्स स्टॉप"))
+        assertTrue(dangerWords.contains("अनइंस्टॉल"))
+
+        val launcherDanger = com.zalni.guard.SettingsGuardConstants.LAUNCHER_DANGER_KEYWORDS
+        assertTrue(launcherDanger.contains("uninstall"))
+        assertTrue(launcherDanger.contains("अनइंस्टॉल"))
+        assertFalse(launcherDanger.contains("force stop"))
+    }
 }

@@ -6,6 +6,7 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.emptyPreferences
+import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
@@ -17,7 +18,8 @@ private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(na
 
 /**
  * Repository managing the blocked keyword list, master protection state,
- * and OEM setup guide completion statuses via Jetpack DataStore Preferences.
+ * OEM setup guide completion statuses, and temporary settings guard pause timestamp
+ * via Jetpack DataStore Preferences.
  */
 class BlockListRepository(context: Context) {
 
@@ -28,7 +30,20 @@ class BlockListRepository(context: Context) {
         private val KEY_PROTECTION_ENABLED = booleanPreferencesKey("protection_enabled")
         private val KEY_HAS_SEEN_SETUP_GUIDE = booleanPreferencesKey("has_seen_setup_guide")
         private val KEY_SETUP_GUIDE_STEPS = stringSetPreferencesKey("setup_guide_completed_steps")
+        private val KEY_PAUSE_UNTIL = longPreferencesKey("pause_guard_until_ms")
     }
+
+    val pauseUntilFlow: Flow<Long> = dataStore.data
+        .catch { exception ->
+            if (exception is IOException) {
+                emit(emptyPreferences())
+            } else {
+                throw exception
+            }
+        }
+        .map { preferences ->
+            preferences[KEY_PAUSE_UNTIL] ?: 0L
+        }
 
     val blockedWordsFlow: Flow<Set<String>> = dataStore.data
         .catch { exception ->
@@ -115,6 +130,12 @@ class BlockListRepository(context: Context) {
                 currentSteps.remove(stepId)
             }
             preferences[KEY_SETUP_GUIDE_STEPS] = currentSteps
+        }
+    }
+
+    suspend fun setPauseUntil(timestampMs: Long) {
+        dataStore.edit { preferences ->
+            preferences[KEY_PAUSE_UNTIL] = timestampMs
         }
     }
 }

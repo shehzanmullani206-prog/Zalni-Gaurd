@@ -9,20 +9,31 @@
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
     <queries>
-        <!-- Xiaomi / MIUI Autostart & Powerkeeper -->
+        <!-- Default HOME Launcher Detection -->
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.HOME" />
+        </intent>
+
+        <!-- Watched Settings & Package Installers for Anti-Tamper Guard -->
+        <package android:name="com.android.settings" />
+        <package android:name="com.android.packageinstaller" />
+        <package android:name="com.google.android.packageinstaller" />
+        <package android:name="com.google.android.permissioncontroller" />
         <package android:name="com.miui.securitycenter" />
+        <package android:name="com.miui.packageinstaller" />
         <package android:name="com.miui.powerkeeper" />
+        <package android:name="com.coloros.safecenter" />
+        <package android:name="com.oplus.phonemanager" />
+        <package android:name="com.transsion.phonemaster" />
+        <package android:name="com.transsion.phonemanager" />
+        <package android:name="com.oppo.safe" />
+        <package android:name="com.coloros.oppoguardelf" />
+
+        <!-- Xiaomi / MIUI Autostart & Powerkeeper -->
         <intent>
             <action android:name="miui.intent.action.OP_AUTO_START" />
         </intent>
-
-        <!-- Transsion / Tecno / Infinix / itel Phone Manager -->
-        <package android:name="com.transsion.phonemanager" />
-
-        <!-- Oppo / Realme / OnePlus SafeCenter & Power -->
-        <package android:name="com.coloros.safecenter" />
-        <package android:name="com.oppo.safe" />
-        <package android:name="com.coloros.oppoguardelf" />
     </queries>
 
     <application

@@ -95,6 +95,7 @@ fun HomeScreen(
 
     // Flow states from DataStore
     val isProtectionEnabled by blockListRepository.isProtectionEnabledFlow.collectAsStateWithLifecycle(initialValue = false)
+    val pauseUntil by blockListRepository.pauseUntilFlow.collectAsStateWithLifecycle(initialValue = 0L)
     val blockedWords by blockListRepository.blockedWordsFlow.collectAsStateWithLifecycle(initialValue = emptySet())
     val completedSetupSteps by blockListRepository.setupGuideStepsFlow.collectAsStateWithLifecycle(initialValue = emptySet())
 
@@ -107,6 +108,7 @@ fun HomeScreen(
 
     // Dialog state for password verification
     var showTurnOffDialog by remember { mutableStateOf(false) }
+    var showPauseGuardDialog by remember { mutableStateOf(false) }
     var wordToDelete by remember { mutableStateOf<String?>(null) }
 
     // Live permission states
@@ -179,11 +181,30 @@ fun HomeScreen(
                 showTurnOffDialog = false
                 coroutineScope.launch {
                     blockListRepository.setProtectionEnabled(false)
+                    blockListRepository.setPauseUntil(0L)
                     ServiceController.stopService(context)
                 }
             },
             onDismiss = {
                 showTurnOffDialog = false
+            }
+        )
+    }
+
+    // Password Dialog: Pausing Settings & Uninstall Guard for 5 minutes
+    if (showPauseGuardDialog) {
+        PasswordConfirmDialog(
+            title = "Pause Settings Guard",
+            message = "Enter your master password to pause settings and uninstall protection for 5 minutes.",
+            passwordManager = passwordManager,
+            onConfirmed = {
+                showPauseGuardDialog = false
+                coroutineScope.launch {
+                    blockListRepository.setPauseUntil(System.currentTimeMillis() + 5 * 60 * 1000L)
+                }
+            },
+            onDismiss = {
+                showPauseGuardDialog = false
             }
         )
     }
@@ -288,7 +309,7 @@ fun HomeScreen(
                 )
             }
 
-            // 2. PROTECTION STATUS CARD (with ON/OFF Switch)
+            // 2. PROTECTION STATUS CARD (with ON/OFF Switch and Settings Guard Pause)
             item {
                 Card(
                     colors = CardDefaults.cardColors(
@@ -299,70 +320,138 @@ fun HomeScreen(
                         .fillMaxWidth()
                         .testTag("protection_status_card")
                 ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(20.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
+                    Column(modifier = Modifier.fillMaxWidth()) {
                         Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(20.dp),
                             verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.weight(1f)
+                            horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(44.dp)
-                                    .background(
-                                        color = if (isProtectionEnabled) GuardGreen.copy(alpha = 0.15f) else MaterialTheme.colorScheme.surfaceVariant,
-                                        shape = CircleShape
-                                    ),
-                                contentAlignment = Alignment.Center
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.weight(1f)
                             ) {
-                                Icon(
-                                    imageVector = if (isProtectionEnabled) Icons.Default.Security else Icons.Default.Block,
-                                    contentDescription = null,
-                                    tint = if (isProtectionEnabled) GuardGreen else MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.size(24.dp)
-                                )
+                                Box(
+                                    modifier = Modifier
+                                        .size(44.dp)
+                                        .background(
+                                            color = if (isProtectionEnabled) GuardGreen.copy(alpha = 0.15f) else MaterialTheme.colorScheme.surfaceVariant,
+                                            shape = CircleShape
+                                        ),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = if (isProtectionEnabled) Icons.Default.Security else Icons.Default.Block,
+                                        contentDescription = null,
+                                        tint = if (isProtectionEnabled) GuardGreen else MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.size(24.dp)
+                                    )
+                                }
+                                Spacer(modifier = Modifier.width(14.dp))
+                                Column {
+                                    Text(
+                                        text = if (isProtectionEnabled) "Protection: ON" else "Protection: OFF",
+                                        style = MaterialTheme.typography.titleMedium.copy(
+                                            fontWeight = FontWeight.Bold
+                                        ),
+                                        color = if (isProtectionEnabled) GuardGreen else MaterialTheme.colorScheme.onSurface
+                                    )
+                                    Text(
+                                        text = if (isProtectionEnabled) "Keyword monitoring active" else "Protection is currently disabled",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
                             }
-                            Spacer(modifier = Modifier.width(14.dp))
-                            Column {
-                                Text(
-                                    text = if (isProtectionEnabled) "Protection: ON" else "Protection: OFF",
-                                    style = MaterialTheme.typography.titleMedium.copy(
-                                        fontWeight = FontWeight.Bold
-                                    ),
-                                    color = if (isProtectionEnabled) GuardGreen else MaterialTheme.colorScheme.onSurface
-                                )
-                                Text(
-                                    text = if (isProtectionEnabled) "Keyword monitoring active" else "Protection is currently disabled",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
+
+                            Switch(
+                                checked = isProtectionEnabled,
+                                onCheckedChange = { willEnable ->
+                                    if (willEnable) {
+                                        coroutineScope.launch {
+                                            blockListRepository.setProtectionEnabled(true)
+                                            ServiceController.startService(context)
+                                        }
+                                    } else {
+                                        showTurnOffDialog = true
+                                    }
+                                },
+                                colors = SwitchDefaults.colors(
+                                    checkedThumbColor = MaterialTheme.colorScheme.onPrimary,
+                                    checkedTrackColor = MaterialTheme.colorScheme.primary,
+                                    uncheckedThumbColor = MaterialTheme.colorScheme.outline,
+                                    uncheckedTrackColor = MaterialTheme.colorScheme.surfaceVariant
+                                ),
+                                modifier = Modifier.testTag("protection_switch")
+                            )
                         }
 
-                        Switch(
-                            checked = isProtectionEnabled,
-                            onCheckedChange = { willEnable ->
-                                if (willEnable) {
-                                    coroutineScope.launch {
-                                        blockListRepository.setProtectionEnabled(true)
-                                        ServiceController.startService(context)
+                        // Settings Guard Status & 5-minute pause option (shown only when protection is ON)
+                        if (isProtectionEnabled) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(1.dp)
+                                    .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
+                            )
+
+                            val isGuardPaused = pauseUntil > System.currentTimeMillis()
+                            val remainingMinutes = if (isGuardPaused) {
+                                (((pauseUntil - System.currentTimeMillis()) / 1000L) + 59) / 60
+                            } else 0L
+
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 20.dp, vertical = 12.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = if (isGuardPaused) "Settings Guard Paused" else "Settings Guard Active",
+                                        style = MaterialTheme.typography.bodyMedium.copy(
+                                            fontWeight = FontWeight.SemiBold
+                                        ),
+                                        color = if (isGuardPaused) MaterialTheme.colorScheme.error else GuardGreen
+                                    )
+                                    Text(
+                                        text = if (isGuardPaused) {
+                                            "Resumes in ~$remainingMinutes min (anti-tamper paused)"
+                                        } else {
+                                            "Guards settings & prevents uninstall"
+                                        },
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+
+                                Spacer(modifier = Modifier.width(8.dp))
+
+                                if (isGuardPaused) {
+                                    OutlinedButton(
+                                        onClick = {
+                                            coroutineScope.launch {
+                                                blockListRepository.setPauseUntil(0L)
+                                            }
+                                        },
+                                        shape = RoundedCornerShape(8.dp),
+                                        modifier = Modifier.testTag("resume_guard_button")
+                                    ) {
+                                        Text("Resume")
                                     }
                                 } else {
-                                    showTurnOffDialog = true
+                                    OutlinedButton(
+                                        onClick = { showPauseGuardDialog = true },
+                                        shape = RoundedCornerShape(8.dp),
+                                        modifier = Modifier.testTag("pause_guard_button")
+                                    ) {
+                                        Text("Pause guard for 5 minutes")
+                                    }
                                 }
-                            },
-                            colors = SwitchDefaults.colors(
-                                checkedThumbColor = MaterialTheme.colorScheme.onPrimary,
-                                checkedTrackColor = MaterialTheme.colorScheme.primary,
-                                uncheckedThumbColor = MaterialTheme.colorScheme.outline,
-                                uncheckedTrackColor = MaterialTheme.colorScheme.surfaceVariant
-                            ),
-                            modifier = Modifier.testTag("protection_switch")
-                        )
+                            }
+                        }
                     }
                 }
             }

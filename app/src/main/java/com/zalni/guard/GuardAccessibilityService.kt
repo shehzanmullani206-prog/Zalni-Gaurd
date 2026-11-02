@@ -7,6 +7,7 @@ import android.os.Looper
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import android.widget.Toast
+import com.example.R
 import com.example.ZalniGuardApplication
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -18,18 +19,21 @@ import kotlinx.coroutines.launch
 import java.util.ArrayDeque
 
 /**
- * Phase 3 & 5 Accessibility Service for ZALNI Guard.
- * Monitors screen text and active window hierarchy to detect blocked keywords,
- * redirecting to the Android Home screen when triggered.
- * Implements lazy keyword matcher rebuilding and memory trimming for 4 GB RAM devices.
+ * Phase 3 & 4 Accessibility Service for ZALNI Guard.
+ * Monitors screen text for blocked keywords and guards device settings / launchers
+ * against unauthorized force-stop, uninstall, or clearing app data.
  */
 class GuardAccessibilityService : AccessibilityService() {
 
     private val serviceScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
     private var scanJob: Job? = null
+    private var settingsGuardJob: Job? = null
 
     @Volatile
     private var isProtectionEnabled: Boolean = false
+
+    @Volatile
+    private var pauseUntilMs: Long = 0L
 
     @Volatile
     private var cachedWords: Set<String> = emptySet()
@@ -40,11 +44,20 @@ class GuardAccessibilityService : AccessibilityService() {
     @Volatile
     private var lastBlockedTimestampMs: Long = 0L
 
+    @Volatile
+    private var lastSettingsGuardTimestampMs: Long = 0L
+
+    @Volatile
+    private var cachedLauncherPackages: Set<String> = emptySet()
+    private var lastLauncherCheckTimeMs: Long = 0L
+
     private val mainHandler = Handler(Looper.getMainLooper())
 
     companion object {
         private const val DEBOUNCE_DELAY_MS = 300L
         private const val BLOCK_COOLDOWN_MS = 1500L
+        private const val SETTINGS_GUARD_DEBOUNCE_MS = 400L
+        private const val SETTINGS_GUARD_COOLDOWN_MS = 2000L
         private const val MAX_TRAVERSAL_NODES = 1000
         private const val MAX_TRAVERSAL_DEPTH = 30
     }
@@ -63,12 +76,39 @@ class GuardAccessibilityService : AccessibilityService() {
             }
 
             launch {
+                repository.pauseUntilFlow.collect { timestamp ->
+                    pauseUntilMs = timestamp
+                }
+            }
+
+            launch {
                 repository.blockedWordsFlow.collect { words ->
                     cachedWords = words
                     cachedMatcher = KeywordMatcher(words)
                 }
             }
         }
+    }
+
+    /**
+     * Resolves and caches home launcher packages, refreshing periodically.
+     */
+    private fun getLauncherPackages(): Set<String> {
+        val now = System.currentTimeMillis()
+        if (cachedLauncherPackages.isEmpty() || now - lastLauncherCheckTimeMs > 60_000L) {
+            cachedLauncherPackages = SettingsGuardConstants.getLauncherPackages(applicationContext)
+            lastLauncherCheckTimeMs = now
+        }
+        return cachedLauncherPackages
+    }
+
+    /**
+     * Checks if a package is a watched settings package, package installer, or home launcher.
+     */
+    private fun isWatchedPackage(packageName: String): Boolean {
+        if (SettingsGuardConstants.ALL_WATCHED_PACKAGES.contains(packageName)) return true
+        if (getLauncherPackages().contains(packageName)) return true
+        return false
     }
 
     /**
@@ -86,10 +126,10 @@ class GuardAccessibilityService : AccessibilityService() {
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (event == null) return
 
-        // Call Phase 4 settings guard hook
+        // 1. Check settings and uninstall guard
         handleSettingsGuard(event)
 
-        // If protection is disabled, return immediately
+        // 2. Keyword blocking engine checks
         if (!isProtectionEnabled) return
 
         // Ignore events from ZALNI Guard itself to allow password & blocklist management
@@ -130,7 +170,157 @@ class GuardAccessibilityService : AccessibilityService() {
     }
 
     /**
-     * Iteratively scans the root in active window with depth and node count capping.
+     * Handles Phase 4 Settings & Anti-Uninstall Guard.
+     * Intercepts attempts to Force Stop, Uninstall, or Clear Storage in system Settings,
+     * Package Installers, and Home Launchers.
+     */
+    private fun handleSettingsGuard(event: AccessibilityEvent) {
+        // Run only when protection is ON
+        if (!isProtectionEnabled) return
+
+        // Check if guard is paused
+        val now = System.currentTimeMillis()
+        if (now < pauseUntilMs) return
+
+        // Check 2-second cooldown
+        if (now - lastSettingsGuardTimestampMs < SETTINGS_GUARD_COOLDOWN_MS) return
+
+        val eventPackage = event.packageName?.toString() ?: return
+        if (!isWatchedPackage(eventPackage)) return
+
+        // 400 ms debounce before traversing the window
+        settingsGuardJob?.cancel()
+        settingsGuardJob = serviceScope.launch {
+            delay(SETTINGS_GUARD_DEBOUNCE_MS)
+            scanSettingsGuard(eventPackage)
+        }
+    }
+
+    /**
+     * Traverses the active window of a watched package to detect anti-tamper triggers.
+     */
+    private fun scanSettingsGuard(eventPackage: String) {
+        val now = System.currentTimeMillis()
+        if (!isProtectionEnabled || now < pauseUntilMs) return
+        if (now - lastSettingsGuardTimestampMs < SETTINGS_GUARD_COOLDOWN_MS) return
+
+        val rootNode: AccessibilityNodeInfo = try {
+            rootInActiveWindow ?: return
+        } catch (_: Exception) {
+            return
+        }
+
+        val rootPackage = rootNode.packageName?.toString() ?: eventPackage
+        if (!isWatchedPackage(rootPackage)) {
+            safeRecycle(rootNode)
+            return
+        }
+
+        val isInstaller = SettingsGuardConstants.isInstallerPackage(rootPackage) ||
+                SettingsGuardConstants.isInstallerPackage(eventPackage)
+        val isLauncher = getLauncherPackages().contains(rootPackage) ||
+                getLauncherPackages().contains(eventPackage)
+
+        val appLabel = getString(R.string.app_name)
+        val appLabelLower = appLabel.lowercase()
+        val dangerKeywords = if (isLauncher) {
+            SettingsGuardConstants.LAUNCHER_DANGER_KEYWORDS
+        } else {
+            SettingsGuardConstants.DANGER_KEYWORDS
+        }
+
+        val queue = ArrayDeque<Pair<AccessibilityNodeInfo, Int>>()
+        queue.add(Pair(rootNode, 0))
+
+        var nodesVisited = 0
+        var foundAppLabel = false
+        var foundDangerWord = false
+
+        while (!queue.isEmpty() && nodesVisited < MAX_TRAVERSAL_NODES) {
+            val pair = queue.poll() ?: break
+            val currentNode = pair.first
+            val depth = pair.second
+            nodesVisited++
+
+            try {
+                val text = currentNode.text?.toString()?.lowercase()
+                val desc = currentNode.contentDescription?.toString()?.lowercase()
+
+                if (!foundAppLabel) {
+                    if ((text != null && text.contains(appLabelLower)) ||
+                        (desc != null && desc.contains(appLabelLower))
+                    ) {
+                        foundAppLabel = true
+                    }
+                }
+
+                if (!isInstaller && !foundDangerWord) {
+                    for (keyword in dangerKeywords) {
+                        if ((text != null && text.contains(keyword)) ||
+                            (desc != null && desc.contains(keyword))
+                        ) {
+                            foundDangerWord = true
+                            break
+                        }
+                    }
+                }
+
+                // Check early exit conditions
+                if (isInstaller && foundAppLabel) {
+                    break
+                }
+                if (!isInstaller && foundAppLabel && foundDangerWord) {
+                    break
+                }
+
+                // Enqueue children if within limits
+                if (depth < MAX_TRAVERSAL_DEPTH) {
+                    val childCount = currentNode.childCount
+                    for (i in 0 until childCount) {
+                        if (nodesVisited + queue.size >= MAX_TRAVERSAL_NODES) break
+                        val child = currentNode.getChild(i)
+                        if (child != null) {
+                            queue.add(Pair(child, depth + 1))
+                        }
+                    }
+                }
+            } finally {
+                safeRecycle(currentNode)
+            }
+        }
+
+        // Recycle remaining unvisited nodes
+        while (!queue.isEmpty()) {
+            val pair = queue.poll() ?: break
+            safeRecycle(pair.first)
+        }
+
+        val shouldTrigger = if (isInstaller) {
+            foundAppLabel
+        } else {
+            foundAppLabel && foundDangerWord
+        }
+
+        if (shouldTrigger) {
+            triggerSettingsGuardAction()
+        }
+    }
+
+    /**
+     * Executes the Settings Guard action:
+     * Redirects to Home screen, displays "Protected by ZALNI Guard" Toast,
+     * and activates 2-second cooldown. Never logs or stores screen content.
+     */
+    private fun triggerSettingsGuardAction() {
+        lastSettingsGuardTimestampMs = System.currentTimeMillis()
+        performGlobalAction(GLOBAL_ACTION_HOME)
+        mainHandler.post {
+            Toast.makeText(applicationContext, "Protected by ZALNI Guard", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    /**
+     * Iteratively scans the root in active window with depth and node count capping for keyword blocking.
      */
     private fun scanActiveWindow() {
         val now = System.currentTimeMillis()
@@ -147,6 +337,7 @@ class GuardAccessibilityService : AccessibilityService() {
         // Avoid self-blocking loops: do not scan or block when the user is inside ZALNI Guard
         val rootPackage = rootNode.packageName?.toString()
         if (rootPackage != null && (rootPackage == packageName || rootPackage == "com.zalni.guard")) {
+            safeRecycle(rootNode)
             return
         }
 
@@ -189,12 +380,7 @@ class GuardAccessibilityService : AccessibilityService() {
                     }
                 }
             } finally {
-                // Safely recycle node on API < 34 (on API 34+ recycle is a deprecated no-op)
-                if (Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-                    try {
-                        currentNode.recycle()
-                    } catch (_: Exception) {}
-                }
+                safeRecycle(currentNode)
             }
 
             if (matched) break
@@ -203,16 +389,22 @@ class GuardAccessibilityService : AccessibilityService() {
         // Clean up any remaining nodes in the queue if traversal ended early
         while (!queue.isEmpty()) {
             val pair = queue.poll() ?: break
-            val node = pair.first
-            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-                try {
-                    node.recycle()
-                } catch (_: Exception) {}
-            }
+            safeRecycle(pair.first)
         }
 
         if (matched) {
             triggerHomeRedirect()
+        }
+    }
+
+    /**
+     * Safely recycles an AccessibilityNodeInfo on Android versions prior to API 34.
+     */
+    private fun safeRecycle(node: AccessibilityNodeInfo?) {
+        if (node != null && Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            try {
+                node.recycle()
+            } catch (_: Exception) {}
         }
     }
 
@@ -226,13 +418,6 @@ class GuardAccessibilityService : AccessibilityService() {
         mainHandler.post {
             Toast.makeText(applicationContext, "Blocked", Toast.LENGTH_SHORT).show()
         }
-    }
-
-    /**
-     * Hook for Device Admin and system Settings guard.
-     */
-    private fun handleSettingsGuard(event: AccessibilityEvent) {
-        // TODO PHASE 4: Handle settings guard and prevent unauthorized tampering/uninstall
     }
 
     override fun onTrimMemory(level: Int) {
@@ -250,6 +435,7 @@ class GuardAccessibilityService : AccessibilityService() {
 
     override fun onInterrupt() {
         scanJob?.cancel()
+        settingsGuardJob?.cancel()
     }
 
     override fun onDestroy() {
