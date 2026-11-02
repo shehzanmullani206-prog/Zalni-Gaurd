@@ -144,6 +144,12 @@ class GuardAccessibilityService : AccessibilityService() {
             return
         }
 
+        // Avoid self-blocking loops: do not scan or block when the user is inside ZALNI Guard
+        val rootPackage = rootNode.packageName?.toString()
+        if (rootPackage != null && (rootPackage == packageName || rootPackage == "com.zalni.guard")) {
+            return
+        }
+
         // Iterative BFS traversal (Node, Depth)
         val queue = ArrayDeque<Pair<AccessibilityNodeInfo, Int>>()
         queue.add(Pair(rootNode, 0))
@@ -152,7 +158,9 @@ class GuardAccessibilityService : AccessibilityService() {
         var matched = false
 
         while (!queue.isEmpty() && nodesVisited < MAX_TRAVERSAL_NODES) {
-            val (currentNode, depth) = queue.poll() ?: break
+            val pair = queue.poll() ?: break
+            val currentNode = pair.first
+            val depth = pair.second
             nodesVisited++
 
             try {
@@ -194,7 +202,8 @@ class GuardAccessibilityService : AccessibilityService() {
 
         // Clean up any remaining nodes in the queue if traversal ended early
         while (!queue.isEmpty()) {
-            val (node, _) = queue.poll()
+            val pair = queue.poll() ?: break
+            val node = pair.first
             if (Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
                 try {
                     node.recycle()

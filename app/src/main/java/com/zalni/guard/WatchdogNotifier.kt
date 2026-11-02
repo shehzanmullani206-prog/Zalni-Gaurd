@@ -45,7 +45,11 @@ object WatchdogNotifier {
             .setContentIntent(pendingIntent)
             .build()
 
-        notificationManager.notify(NOTIFICATION_ID, notification)
+        try {
+            notificationManager.notify(NOTIFICATION_ID, notification)
+        } catch (_: SecurityException) {
+            // Handled when POST_NOTIFICATIONS is revoked on Android 13+
+        }
     }
 
     fun cancelWatchdogNotification(context: Context) {

@@ -153,6 +153,12 @@ object MakerSetupHelper {
                     return
                 }
             } catch (_: Exception) {}
+
+            // Secondary attempt: some OEM skins restrict resolveActivity queries for internal settings activities
+            try {
+                context.startActivity(candidate)
+                return
+            } catch (_: Exception) {}
         }
         // Fallback to application details settings
         try {
