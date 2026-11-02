@@ -109,6 +109,7 @@ fun HomeScreen(
     // Dialog state for password verification
     var showTurnOffDialog by remember { mutableStateOf(false) }
     var showPauseGuardDialog by remember { mutableStateOf(false) }
+    var showReleaseDeviceOwnerDialog by remember { mutableStateOf(false) }
     var wordToDelete by remember { mutableStateOf<String?>(null) }
 
     // Live permission states
@@ -124,6 +125,9 @@ fun HomeScreen(
         isNotificationGranted = PermissionUtils.isNotificationPermissionGranted(context)
         isDeviceAdminActive = PermissionUtils.isDeviceAdminActive(context)
         isDeviceOwnerActive = PermissionUtils.isDeviceOwnerActive(context)
+        if (isDeviceOwnerActive) {
+            PermissionUtils.applyDeviceOwnerRestrictions(context)
+        }
     }
 
     // Refresh permission statuses in onResume
@@ -205,6 +209,23 @@ fun HomeScreen(
             },
             onDismiss = {
                 showPauseGuardDialog = false
+            }
+        )
+    }
+
+    // Password Dialog: Releasing Device Owner
+    if (showReleaseDeviceOwnerDialog) {
+        PasswordConfirmDialog(
+            title = "Release Device Owner",
+            message = "Enter your master password to release Device Owner privileges and restore normal device administration.",
+            passwordManager = passwordManager,
+            onConfirmed = {
+                showReleaseDeviceOwnerDialog = false
+                PermissionUtils.releaseDeviceOwner(context)
+                refreshPermissions()
+            },
+            onDismiss = {
+                showReleaseDeviceOwnerDialog = false
             }
         )
     }
@@ -305,7 +326,8 @@ fun HomeScreen(
                     },
                     onFixBattery = { PermissionUtils.requestBatteryOptimizationExemption(context) },
                     onFixDeviceAdmin = { PermissionUtils.requestDeviceAdmin(context) },
-                    onOpenSetupGuide = onOpenSetupGuide
+                    onOpenSetupGuide = onOpenSetupGuide,
+                    onReleaseDeviceOwner = { showReleaseDeviceOwnerDialog = true }
                 )
             }
 

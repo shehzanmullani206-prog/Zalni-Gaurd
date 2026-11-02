@@ -9,6 +9,7 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.PowerManager
+import android.os.UserManager
 import android.provider.Settings
 import android.text.TextUtils
 import androidx.core.content.ContextCompat
@@ -86,6 +87,50 @@ object PermissionUtils {
     fun isDeviceOwnerActive(context: Context): Boolean {
         val dpm = context.getSystemService(Context.DEVICE_POLICY_SERVICE) as? DevicePolicyManager ?: return false
         return dpm.isDeviceOwnerApp(context.packageName)
+    }
+
+    /**
+     * Applies Device Owner enterprise policies:
+     * - Blocks uninstallation via setUninstallBlocked
+     * - Restricts app management via DISALLOW_APPS_CONTROL
+     * - Prevents bypassing protection in Safe Mode via DISALLOW_SAFE_BOOT
+     * - Prevents factory reset wipe via DISALLOW_FACTORY_RESET
+     */
+    fun applyDeviceOwnerRestrictions(context: Context): Boolean {
+        val dpm = context.getSystemService(Context.DEVICE_POLICY_SERVICE) as? DevicePolicyManager ?: return false
+        val admin = ComponentName(context, GuardDeviceAdminReceiver::class.java)
+        if (!dpm.isDeviceOwnerApp(context.packageName)) return false
+
+        return try {
+            dpm.setUninstallBlocked(admin, context.packageName, true)
+            dpm.addUserRestriction(admin, UserManager.DISALLOW_APPS_CONTROL)
+            dpm.addUserRestriction(admin, UserManager.DISALLOW_SAFE_BOOT)
+            dpm.addUserRestriction(admin, UserManager.DISALLOW_FACTORY_RESET)
+            true
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    /**
+     * Releases Device Owner restrictions and clears device owner privileges.
+     * Must be gated behind password confirmation.
+     */
+    fun releaseDeviceOwner(context: Context): Boolean {
+        val dpm = context.getSystemService(Context.DEVICE_POLICY_SERVICE) as? DevicePolicyManager ?: return false
+        val admin = ComponentName(context, GuardDeviceAdminReceiver::class.java)
+        if (!dpm.isDeviceOwnerApp(context.packageName)) return false
+
+        return try {
+            dpm.clearUserRestriction(admin, UserManager.DISALLOW_APPS_CONTROL)
+            dpm.clearUserRestriction(admin, UserManager.DISALLOW_SAFE_BOOT)
+            dpm.clearUserRestriction(admin, UserManager.DISALLOW_FACTORY_RESET)
+            dpm.setUninstallBlocked(admin, context.packageName, false)
+            dpm.clearDeviceOwnerApp(context.packageName)
+            true
+        } catch (_: Exception) {
+            false
+        }
     }
 
     fun openAccessibilitySettings(context: Context) {

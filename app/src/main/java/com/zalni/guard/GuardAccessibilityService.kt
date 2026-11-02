@@ -440,6 +440,11 @@ class GuardAccessibilityService : AccessibilityService() {
 
     override fun onDestroy() {
         super.onDestroy()
+        if (isProtectionEnabled) {
+            try {
+                WatchdogNotifier.postWatchdogNotification(applicationContext)
+            } catch (_: Exception) {}
+        }
         serviceScope.cancel()
     }
 }

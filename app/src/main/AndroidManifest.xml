@@ -29,6 +29,7 @@
         <package android:name="com.transsion.phonemanager" />
         <package android:name="com.oppo.safe" />
         <package android:name="com.coloros.oppoguardelf" />
+        <package android:name="com.android.systemui" />
 
         <!-- Xiaomi / MIUI Autostart & Powerkeeper -->
         <intent>
@@ -38,7 +39,7 @@
 
     <application
         android:name=".ZalniGuardApplication"
-        android:allowBackup="true"
+        android:allowBackup="false"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:fullBackupContent="@xml/backup_rules"
         android:icon="@mipmap/ic_launcher"

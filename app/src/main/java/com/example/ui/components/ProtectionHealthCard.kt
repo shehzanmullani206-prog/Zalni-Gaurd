@@ -64,6 +64,7 @@ fun ProtectionHealthCard(
     onFixBattery: () -> Unit,
     onFixDeviceAdmin: () -> Unit,
     onOpenSetupGuide: () -> Unit,
+    onReleaseDeviceOwner: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val healthLevel = when {
@@ -176,11 +177,11 @@ fun ProtectionHealthCard(
             // 5. Device Owner Item (Optional Enterprise MDM)
             HealthItemRow(
                 title = "Device Owner (MDM)",
-                subtitle = if (isDeviceOwnerActive) "Provisioned (Maximum persistence)" else "Not provisioned (Optional via ADB)",
+                subtitle = if (isDeviceOwnerActive) "Provisioned (Maximum persistence - Tap to release)" else "Not provisioned (Optional via ADB)",
                 statusColor = if (isDeviceOwnerActive) GuardGreen else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                 isPassing = isDeviceOwnerActive,
-                onClick = {},
-                isClickable = false,
+                onClick = onReleaseDeviceOwner,
+                isClickable = isDeviceOwnerActive,
                 testTag = "health_item_device_owner"
             )
 

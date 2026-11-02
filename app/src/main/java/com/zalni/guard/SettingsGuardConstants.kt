@@ -17,10 +17,14 @@ object SettingsGuardConstants {
     val SETTINGS_PACKAGES: Set<String> = setOf(
         "com.android.settings",
         "com.google.android.permissioncontroller",
+        "com.android.systemui",
         "com.miui.securitycenter",
         "com.coloros.safecenter",
         "com.oplus.phonemanager",
-        "com.transsion.phonemaster"
+        "com.oppo.safe",
+        "com.coloros.oppoguardelf",
+        "com.transsion.phonemaster",
+        "com.transsion.phonemanager"
     )
 
     /**
@@ -49,10 +53,15 @@ object SettingsGuardConstants {
         "manage space",
         "deactivate",
         "turn off",
+        "stop",
+        "disable",
+        "app info",
         // Hindi equivalents
         "फ़ोर्स स्टॉप",
         "ज़बरदस्ती रोकें",
         "बलपूर्वक रोकें",
+        "रोकें",
+        "रोकना",
         "अनइंस्टॉल",
         "हटाएं",
         "हटाएँ",
@@ -70,19 +79,28 @@ object SettingsGuardConstants {
         "स्थान प्रबंधित करें",
         "निष्क्रिय करें",
         "अक्षम करें",
+        "अक्षम",
         "डिएक्टिवेट",
         "बंद करें",
-        "टर्न ऑफ"
+        "टर्न ऑफ",
+        "स्टॉप",
+        "एप जानकारी",
+        "जानकारी"
     )
 
     /**
-     * Danger keywords for launcher packages (only "Uninstall" and Hindi equivalents count).
+     * Danger keywords for launcher packages (uninstall, app info, delete, and Hindi equivalents).
      */
     val LAUNCHER_DANGER_KEYWORDS: List<String> = listOf(
         "uninstall",
+        "app info",
+        "delete",
         "अनइंस्टॉल",
         "हटाएं",
-        "हटाएँ"
+        "हटाएँ",
+        "डिलीट",
+        "एप जानकारी",
+        "जानकारी"
     )
 
     /**
