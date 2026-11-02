@@ -16,8 +16,8 @@ import java.io.IOException
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "zalni_guard_settings")
 
 /**
- * Repository managing the blocked keyword list and the master protection state
- * via Jetpack DataStore Preferences. Thread-safe for Phase 3 background service access.
+ * Repository managing the blocked keyword list, master protection state,
+ * and OEM setup guide completion statuses via Jetpack DataStore Preferences.
  */
 class BlockListRepository(context: Context) {
 
@@ -26,11 +26,10 @@ class BlockListRepository(context: Context) {
     companion object {
         private val KEY_BLOCKED_WORDS = stringSetPreferencesKey("blocked_words")
         private val KEY_PROTECTION_ENABLED = booleanPreferencesKey("protection_enabled")
+        private val KEY_HAS_SEEN_SETUP_GUIDE = booleanPreferencesKey("has_seen_setup_guide")
+        private val KEY_SETUP_GUIDE_STEPS = stringSetPreferencesKey("setup_guide_completed_steps")
     }
 
-    /**
-     * Flow emitting the set of active blocked words.
-     */
     val blockedWordsFlow: Flow<Set<String>> = dataStore.data
         .catch { exception ->
             if (exception is IOException) {
@@ -43,9 +42,6 @@ class BlockListRepository(context: Context) {
             preferences[KEY_BLOCKED_WORDS] ?: emptySet()
         }
 
-    /**
-     * Flow emitting the master protection on/off toggle state (defaults to false until user turns ON).
-     */
     val isProtectionEnabledFlow: Flow<Boolean> = dataStore.data
         .catch { exception ->
             if (exception is IOException) {
@@ -58,9 +54,30 @@ class BlockListRepository(context: Context) {
             preferences[KEY_PROTECTION_ENABLED] ?: false
         }
 
-    /**
-     * Adds a normalized word to the blocked list.
-     */
+    val hasSeenSetupGuideFlow: Flow<Boolean> = dataStore.data
+        .catch { exception ->
+            if (exception is IOException) {
+                emit(emptyPreferences())
+            } else {
+                throw exception
+            }
+        }
+        .map { preferences ->
+            preferences[KEY_HAS_SEEN_SETUP_GUIDE] ?: false
+        }
+
+    val setupGuideStepsFlow: Flow<Set<String>> = dataStore.data
+        .catch { exception ->
+            if (exception is IOException) {
+                emit(emptyPreferences())
+            } else {
+                throw exception
+            }
+        }
+        .map { preferences ->
+            preferences[KEY_SETUP_GUIDE_STEPS] ?: emptySet()
+        }
+
     suspend fun addWord(word: String) {
         dataStore.edit { preferences ->
             val currentWords = preferences[KEY_BLOCKED_WORDS]?.toMutableSet() ?: mutableSetOf()
@@ -69,9 +86,6 @@ class BlockListRepository(context: Context) {
         }
     }
 
-    /**
-     * Removes a word from the blocked list.
-     */
     suspend fun removeWord(word: String) {
         dataStore.edit { preferences ->
             val currentWords = preferences[KEY_BLOCKED_WORDS]?.toMutableSet() ?: mutableSetOf()
@@ -80,12 +94,27 @@ class BlockListRepository(context: Context) {
         }
     }
 
-    /**
-     * Updates the protection enabled state.
-     */
     suspend fun setProtectionEnabled(enabled: Boolean) {
         dataStore.edit { preferences ->
             preferences[KEY_PROTECTION_ENABLED] = enabled
+        }
+    }
+
+    suspend fun setHasSeenSetupGuide(seen: Boolean) {
+        dataStore.edit { preferences ->
+            preferences[KEY_HAS_SEEN_SETUP_GUIDE] = seen
+        }
+    }
+
+    suspend fun toggleSetupGuideStep(stepId: String, isCompleted: Boolean) {
+        dataStore.edit { preferences ->
+            val currentSteps = preferences[KEY_SETUP_GUIDE_STEPS]?.toMutableSet() ?: mutableSetOf()
+            if (isCompleted) {
+                currentSteps.add(stepId)
+            } else {
+                currentSteps.remove(stepId)
+            }
+            preferences[KEY_SETUP_GUIDE_STEPS] = currentSteps
         }
     }
 }

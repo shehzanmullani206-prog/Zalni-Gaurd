@@ -5,7 +5,7 @@ import android.content.Intent
 import androidx.core.content.ContextCompat
 
 /**
- * Helper to start and stop GuardForegroundService based on protection state.
+ * Helper to start and stop GuardForegroundService and manage periodic watchdog scheduling.
  */
 object ServiceController {
 
@@ -14,8 +14,9 @@ object ServiceController {
         try {
             ContextCompat.startForegroundService(context, intent)
         } catch (_: Exception) {
-            // Catches any foreground service start restrictions
+            // Catches any background execution / foreground start restrictions safely
         }
+        WatchdogManager.schedule(context)
     }
 
     fun stopService(context: Context) {
@@ -23,5 +24,7 @@ object ServiceController {
         try {
             context.stopService(intent)
         } catch (_: Exception) {}
+        WatchdogManager.cancel(context)
+        WatchdogNotifier.cancelWatchdogNotification(context)
     }
 }

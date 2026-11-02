@@ -18,9 +18,10 @@ import kotlinx.coroutines.launch
 import java.util.ArrayDeque
 
 /**
- * Phase 3 Accessibility Service for ZALNI Guard.
+ * Phase 3 & 5 Accessibility Service for ZALNI Guard.
  * Monitors screen text and active window hierarchy to detect blocked keywords,
  * redirecting to the Android Home screen when triggered.
+ * Implements lazy keyword matcher rebuilding and memory trimming for 4 GB RAM devices.
  */
 class GuardAccessibilityService : AccessibilityService() {
 
@@ -29,6 +30,9 @@ class GuardAccessibilityService : AccessibilityService() {
 
     @Volatile
     private var isProtectionEnabled: Boolean = false
+
+    @Volatile
+    private var cachedWords: Set<String> = emptySet()
 
     @Volatile
     private var cachedMatcher: KeywordMatcher? = null
@@ -60,10 +64,23 @@ class GuardAccessibilityService : AccessibilityService() {
 
             launch {
                 repository.blockedWordsFlow.collect { words ->
+                    cachedWords = words
                     cachedMatcher = KeywordMatcher(words)
                 }
             }
         }
+    }
+
+    /**
+     * Lazily reconstructs the KeywordMatcher if it was dropped during a low memory trim.
+     */
+    private fun getOrRebuildMatcher(): KeywordMatcher? {
+        var matcher = cachedMatcher
+        if (matcher == null && cachedWords.isNotEmpty()) {
+            matcher = KeywordMatcher(cachedWords)
+            cachedMatcher = matcher
+        }
+        return matcher
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
@@ -95,7 +112,7 @@ class GuardAccessibilityService : AccessibilityService() {
                     textBuilder.append(item).append(" ")
                 }
                 val text = textBuilder.toString()
-                if (text.isNotBlank() && cachedMatcher?.matches(text) == true) {
+                if (text.isNotBlank() && getOrRebuildMatcher()?.matches(text) == true) {
                     triggerHomeRedirect()
                 }
             }
@@ -119,7 +136,7 @@ class GuardAccessibilityService : AccessibilityService() {
         val now = System.currentTimeMillis()
         if (now - lastBlockedTimestampMs < BLOCK_COOLDOWN_MS) return
         if (!isProtectionEnabled) return
-        val matcher = cachedMatcher ?: return
+        val matcher = getOrRebuildMatcher() ?: return
 
         val rootNode: AccessibilityNodeInfo = try {
             rootInActiveWindow ?: return
@@ -207,6 +224,19 @@ class GuardAccessibilityService : AccessibilityService() {
      */
     private fun handleSettingsGuard(event: AccessibilityEvent) {
         // TODO PHASE 4: Handle settings guard and prevent unauthorized tampering/uninstall
+    }
+
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        if (level >= TRIM_MEMORY_RUNNING_LOW || level >= TRIM_MEMORY_BACKGROUND) {
+            // Drop in-memory matcher to release regex cache under low memory
+            cachedMatcher = null
+        }
+    }
+
+    override fun onLowMemory() {
+        super.onLowMemory()
+        cachedMatcher = null
     }
 
     override fun onInterrupt() {

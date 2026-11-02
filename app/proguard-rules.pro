@@ -1,21 +1,19 @@
-# Add project specific ProGuard rules here.
-# You can control the set of applied configuration files using the
-# proguardFiles setting in build.gradle.
-#
-# For more details, see
-#   http://developer.android.com/guide/developing/tools/proguard.html
+# Preserve Core App Components
+-keep class com.example.ZalniGuardApplication { *; }
+-keep class com.zalni.guard.GuardAccessibilityService { *; }
+-keep class com.zalni.guard.GuardForegroundService { *; }
+-keep class com.zalni.guard.BootReceiver { *; }
+-keep class com.zalni.guard.GuardDeviceAdminReceiver { *; }
+-keep class com.zalni.guard.WatchdogWorker { *; }
+-keep class com.zalni.guard.KeywordMatcher { *; }
 
-# If your project uses WebView with JS, uncomment the following
-# and specify the fully qualified class name to the JavaScript interface
-# class:
-#-keepclassmembers class fqcn.of.javascript.interface.for.webview {
-#   public *;
-#}
+# WorkManager Workers
+-keep class * extends androidx.work.Worker { *; }
+-keep class * extends androidx.work.CoroutineWorker { *; }
+-keep class * extends androidx.work.ListenableWorker { *; }
 
-# Uncomment this to preserve the line number information for
-# debugging stack traces.
-#-keepattributes SourceFile,LineNumberTable
+# DataStore & Preferences
+-keepclassmembers class * extends androidx.datastore.preferences.core.Preferences { *; }
 
-# If you keep the line number information, uncomment this to
-# hide the original source file name.
-#-renamesourcefileattribute SourceFile
+# Keep line numbers for debugging
+-keepattributes SourceFile,LineNumberTable

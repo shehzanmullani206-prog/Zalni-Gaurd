@@ -24,16 +24,12 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.BatteryAlert
-import androidx.compose.material.icons.filled.BatteryChargingFull
 import androidx.compose.material.icons.filled.Block
-import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.Notifications
-import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Shield
+import androidx.compose.material.icons.filled.Smartphone
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -74,18 +70,16 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.PasswordManager
 import com.example.data.BlockListRepository
 import com.example.ui.components.PasswordConfirmDialog
+import com.example.ui.components.ProtectionHealthCard
 import com.example.ui.theme.GuardGreen
-import com.example.ui.theme.GuardRed
 import com.example.util.PermissionUtils
+import com.zalni.guard.MakerSetupHelper
+import com.zalni.guard.ServiceController
 import kotlinx.coroutines.launch
 
 /**
- * Phase 2 Home Screen (shown only after password unlock).
- * Features:
- * 1. Protection ON/OFF Switch card (turning OFF requires password).
- * 2. Blocked keyword input with trimming, lowercasing, space collapsing, and validation.
- * 3. Lazy list of blocked words with password-gated deletion and empty state.
- * 4. Permission checklist card with live status & onResume refresh.
+ * Phase 5 Home Screen with Protection Health Card at the top,
+ * ON/OFF master switch, keyword management, setup guide shortcut, and permission checklist.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -93,6 +87,7 @@ fun HomeScreen(
     passwordManager: PasswordManager,
     blockListRepository: BlockListRepository,
     onLockApp: () -> Unit,
+    onOpenSetupGuide: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -101,6 +96,10 @@ fun HomeScreen(
     // Flow states from DataStore
     val isProtectionEnabled by blockListRepository.isProtectionEnabledFlow.collectAsStateWithLifecycle(initialValue = false)
     val blockedWords by blockListRepository.blockedWordsFlow.collectAsStateWithLifecycle(initialValue = emptySet())
+    val completedSetupSteps by blockListRepository.setupGuideStepsFlow.collectAsStateWithLifecycle(initialValue = emptySet())
+
+    val detectedMaker = remember { MakerSetupHelper.detectMaker() }
+    val totalSetupSteps = remember(detectedMaker) { MakerSetupHelper.getStepsForMaker(context, detectedMaker).size }
 
     // Keyword input state
     var wordInput by remember { mutableStateOf("") }
@@ -114,11 +113,15 @@ fun HomeScreen(
     var isAccessibilityGranted by remember { mutableStateOf(false) }
     var isBatteryOptGranted by remember { mutableStateOf(false) }
     var isNotificationGranted by remember { mutableStateOf(false) }
+    var isDeviceAdminActive by remember { mutableStateOf(false) }
+    var isDeviceOwnerActive by remember { mutableStateOf(false) }
 
     fun refreshPermissions() {
         isAccessibilityGranted = PermissionUtils.isAccessibilityServiceEnabled(context)
         isBatteryOptGranted = PermissionUtils.isBatteryOptimizationIgnored(context)
         isNotificationGranted = PermissionUtils.isNotificationPermissionGranted(context)
+        isDeviceAdminActive = PermissionUtils.isDeviceAdminActive(context)
+        isDeviceOwnerActive = PermissionUtils.isDeviceOwnerActive(context)
     }
 
     // Refresh permission statuses in onResume
@@ -144,7 +147,6 @@ fun HomeScreen(
     }
 
     fun handleAddWord() {
-        // Trim, lowercase, and collapse consecutive whitespaces into a single space
         val sanitized = wordInput.trim().lowercase().replace(Regex("\\s+"), " ")
 
         when {
@@ -177,7 +179,7 @@ fun HomeScreen(
                 showTurnOffDialog = false
                 coroutineScope.launch {
                     blockListRepository.setProtectionEnabled(false)
-                    com.zalni.guard.ServiceController.stopService(context)
+                    ServiceController.stopService(context)
                 }
             },
             onDismiss = {
@@ -232,6 +234,16 @@ fun HomeScreen(
             },
             actions = {
                 IconButton(
+                    onClick = onOpenSetupGuide,
+                    modifier = Modifier.testTag("action_open_setup_guide")
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Smartphone,
+                        contentDescription = "Phone Setup Guide",
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                }
+                IconButton(
                     onClick = onLockApp,
                     modifier = Modifier.testTag("action_lock_app")
                 ) {
@@ -254,7 +266,29 @@ fun HomeScreen(
             contentPadding = PaddingValues(top = 8.dp, bottom = 32.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // 1. PROTECTION STATUS CARD (with ON/OFF Switch)
+            // 1. PROTECTION HEALTH CARD (At top of Home Screen)
+            item {
+                ProtectionHealthCard(
+                    isAccessibilityEnabled = isAccessibilityGranted,
+                    isNotificationGranted = isNotificationGranted,
+                    isBatteryExempt = isBatteryOptGranted,
+                    isDeviceAdminActive = isDeviceAdminActive,
+                    isDeviceOwnerActive = isDeviceOwnerActive,
+                    setupStepsCompletedCount = completedSetupSteps.size,
+                    setupStepsTotalCount = totalSetupSteps,
+                    onFixAccessibility = { PermissionUtils.openAccessibilitySettings(context) },
+                    onFixNotification = {
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                        }
+                    },
+                    onFixBattery = { PermissionUtils.requestBatteryOptimizationExemption(context) },
+                    onFixDeviceAdmin = { PermissionUtils.requestDeviceAdmin(context) },
+                    onOpenSetupGuide = onOpenSetupGuide
+                )
+            }
+
+            // 2. PROTECTION STATUS CARD (with ON/OFF Switch)
             item {
                 Card(
                     colors = CardDefaults.cardColors(
@@ -302,7 +336,7 @@ fun HomeScreen(
                                     color = if (isProtectionEnabled) GuardGreen else MaterialTheme.colorScheme.onSurface
                                 )
                                 Text(
-                                    text = if (isProtectionEnabled) "Keyword monitoring active (Phase 2 config)" else "Protection is currently disabled",
+                                    text = if (isProtectionEnabled) "Keyword monitoring active" else "Protection is currently disabled",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -313,13 +347,11 @@ fun HomeScreen(
                             checked = isProtectionEnabled,
                             onCheckedChange = { willEnable ->
                                 if (willEnable) {
-                                    // Turning ON does not require password
                                     coroutineScope.launch {
                                         blockListRepository.setProtectionEnabled(true)
-                                        com.zalni.guard.ServiceController.startService(context)
+                                        ServiceController.startService(context)
                                     }
                                 } else {
-                                    // Turning OFF MUST require password verification
                                     showTurnOffDialog = true
                                 }
                             },
@@ -335,7 +367,7 @@ fun HomeScreen(
                 }
             }
 
-            // 2. ADD KEYWORD CARD
+            // 3. ADD KEYWORD CARD
             item {
                 Card(
                     colors = CardDefaults.cardColors(
@@ -411,7 +443,7 @@ fun HomeScreen(
                 }
             }
 
-            // 3. BLOCKED KEYWORDS LIST HEADER
+            // 4. BLOCKED KEYWORDS LIST HEADER
             item {
                 Row(
                     modifier = Modifier
@@ -457,7 +489,6 @@ fun HomeScreen(
                     }
                 }
             } else {
-                // List of blocked words
                 items(
                     items = blockedWords.toList().sorted(),
                     key = { it }
@@ -516,139 +547,6 @@ fun HomeScreen(
                         }
                     }
                 }
-            }
-
-            // 4. PERMISSIONS CHECKLIST CARD
-            item {
-                Spacer(modifier = Modifier.height(8.dp))
-                Card(
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surface
-                    ),
-                    shape = RoundedCornerShape(16.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(18.dp)
-                    ) {
-                        Text(
-                            text = "Permission Checklist",
-                            style = MaterialTheme.typography.titleMedium.copy(
-                                fontWeight = FontWeight.Bold
-                            ),
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = "System permissions required for continuous device protection.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-
-                        Spacer(modifier = Modifier.height(16.dp))
-
-                        // Permission A: Accessibility Service
-                        PermissionRow(
-                            title = "Accessibility Service",
-                            description = "Keyword detection engine (Phase 3)",
-                            isGranted = isAccessibilityGranted,
-                            onGrantClick = {
-                                PermissionUtils.openAccessibilitySettings(context)
-                            }
-                        )
-
-                        Spacer(modifier = Modifier.height(14.dp))
-
-                        // Permission B: Battery Optimization
-                        PermissionRow(
-                            title = "Battery Optimization",
-                            description = "Prevents OEM task killer shutdown",
-                            isGranted = isBatteryOptGranted,
-                            onGrantClick = {
-                                PermissionUtils.requestBatteryOptimizationExemption(context)
-                            }
-                        )
-
-                        Spacer(modifier = Modifier.height(14.dp))
-
-                        // Permission C: Notifications
-                        PermissionRow(
-                            title = "Notifications",
-                            description = "Security status alerts",
-                            isGranted = isNotificationGranted,
-                            onGrantClick = {
-                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                                    notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-                                }
-                            }
-                        )
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun PermissionRow(
-    title: String,
-    description: String,
-    isGranted: Boolean,
-    onGrantClick: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    Row(
-        modifier = modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween
-    ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    text = title,
-                    style = MaterialTheme.typography.bodyMedium.copy(
-                        fontWeight = FontWeight.SemiBold
-                    ),
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                // Status badge
-                Card(
-                    colors = CardDefaults.cardColors(
-                        containerColor = if (isGranted) GuardGreen.copy(alpha = 0.15f) else MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.3f)
-                    ),
-                    shape = RoundedCornerShape(6.dp)
-                ) {
-                    Text(
-                        text = if (isGranted) "Granted" else "Not granted",
-                        style = MaterialTheme.typography.labelSmall.copy(
-                            fontWeight = FontWeight.Medium
-                        ),
-                        color = if (isGranted) GuardGreen else MaterialTheme.colorScheme.error,
-                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                    )
-                }
-            }
-            Text(
-                text = description,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-
-        if (!isGranted) {
-            Spacer(modifier = Modifier.width(8.dp))
-            OutlinedButton(
-                onClick = onGrantClick,
-                shape = RoundedCornerShape(8.dp),
-                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
-                colors = ButtonDefaults.outlinedButtonColors(
-                    contentColor = MaterialTheme.colorScheme.primary
-                )
-            ) {
-                Text("Grant", style = MaterialTheme.typography.labelMedium)
             }
         }
     }

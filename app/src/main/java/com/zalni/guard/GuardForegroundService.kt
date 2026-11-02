@@ -1,5 +1,6 @@
 package com.zalni.guard
 
+import android.app.ForegroundServiceStartNotAllowedException
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -15,7 +16,8 @@ import com.example.MainActivity
 
 /**
  * Ongoing foreground service ensuring high process priority for ZALNI Guard background protection.
- * Uses low-importance notification channel with specialUse foregroundServiceType.
+ * Catches ForegroundServiceStartNotAllowedException on Android 12+ and calls startForeground
+ * within the strict 5-second window.
  */
 class GuardForegroundService : Service() {
 
@@ -28,22 +30,33 @@ class GuardForegroundService : Service() {
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
+        // Call startForeground immediately in onCreate to guarantee completion within 5 seconds
+        promoteToForeground()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        val notification = buildForegroundNotification()
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            startForeground(
-                NOTIFICATION_ID,
-                notification,
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
-            )
-        } else {
-            startForeground(NOTIFICATION_ID, notification)
-        }
-
+        promoteToForeground()
         return START_STICKY
+    }
+
+    private fun promoteToForeground() {
+        val notification = buildForegroundNotification()
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                startForeground(
+                    NOTIFICATION_ID,
+                    notification,
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
+                )
+            } else {
+                startForeground(NOTIFICATION_ID, notification)
+            }
+        } catch (e: Exception) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && e is ForegroundServiceStartNotAllowedException) {
+                // Background start restriction encountered on Android 12+; avoid crash
+                stopSelf()
+            }
+        }
     }
 
     override fun onBind(intent: Intent?): IBinder? = null

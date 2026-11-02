@@ -1,6 +1,8 @@
 package com.example.util
 
 import android.Manifest
+import android.app.admin.DevicePolicyManager
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -10,9 +12,10 @@ import android.os.PowerManager
 import android.provider.Settings
 import android.text.TextUtils
 import androidx.core.content.ContextCompat
+import com.zalni.guard.GuardDeviceAdminReceiver
 
 /**
- * Utility functions for checking and requesting system permissions for ZALNI Guard.
+ * Utility functions for checking and requesting system permissions and device admin states.
  */
 object PermissionUtils {
 
@@ -68,6 +71,23 @@ object PermissionUtils {
         }
     }
 
+    /**
+     * Checks if Device Admin privilege is active.
+     */
+    fun isDeviceAdminActive(context: Context): Boolean {
+        val dpm = context.getSystemService(Context.DEVICE_POLICY_SERVICE) as? DevicePolicyManager ?: return false
+        val adminComponent = ComponentName(context, GuardDeviceAdminReceiver::class.java)
+        return dpm.isAdminActive(adminComponent)
+    }
+
+    /**
+     * Checks if the app is provisioned as Device Owner (optional enterprise MDM mode).
+     */
+    fun isDeviceOwnerActive(context: Context): Boolean {
+        val dpm = context.getSystemService(Context.DEVICE_POLICY_SERVICE) as? DevicePolicyManager ?: return false
+        return dpm.isDeviceOwnerApp(context.packageName)
+    }
+
     fun openAccessibilitySettings(context: Context) {
         val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK
@@ -88,5 +108,20 @@ object PermissionUtils {
             }
             context.startActivity(fallback)
         }
+    }
+
+    fun requestDeviceAdmin(context: Context) {
+        val adminComponent = ComponentName(context, GuardDeviceAdminReceiver::class.java)
+        val intent = Intent(DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN).apply {
+            putExtra(DevicePolicyManager.EXTRA_DEVICE_ADMIN, adminComponent)
+            putExtra(
+                DevicePolicyManager.EXTRA_ADD_EXPLANATION,
+                "Enables legitimate device administration to prevent unauthorized uninstallation of ZALNI Guard."
+            )
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK
+        }
+        try {
+            context.startActivity(intent)
+        } catch (_: Exception) {}
     }
 }
